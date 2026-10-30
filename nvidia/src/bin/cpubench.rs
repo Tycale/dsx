@@ -104,12 +104,9 @@ fn layer_rate(moe: &mut CpuMoe, ew: &[ExpertW], t: usize, passes: usize, rng: &m
 }
 
 fn cpus(n: usize) -> Vec<usize> {
-    match n {
-        1 => vec![0],
-        8 => (0..8).map(|c| 2 * c).collect(), // one thread per P-core
-        14 => (0..14).collect(),
-        _ => (0..n).collect(),
-    }
+    // Ryzen 9 layout: use the worker cores first, then their SMT siblings.
+    assert!(n <= 28);
+    (0..14).chain(16..30).take(n).collect()
 }
 
 fn t16_ex(gu: GType, dn: GType, rng: &mut Rng) -> Ex {
@@ -128,7 +125,7 @@ fn t16_ex(gu: GType, dn: GType, rng: &mut Rng) -> Ex {
 /// `t16`: ms per 6-expert call, T16 layouts against a mix of UD-IQ1_M's codebook types, interleaved
 fn t16_bench(nexp: usize, rng: &mut Rng) {
     use GType::*;
-    dsx::cpu::pool::pin_to(16);
+    dsx::cpu::pool::pin_to(dsx::cpu::pool::WORKER_CPU);
     let sets: Vec<(&str, Vec<Ex>)> = vec![
         ("UD IQ mix", make(&[(Iq1S, Iq2Xxs), (Iq2Xxs, Iq2Xs), (Iq1S, Iq2S), (Iq2Xxs, Iq2Xxs), (Iq2Xs, Iq2S), (Iq1S, Iq2Xs)], nexp, rng)),
         ("T16 1.5/2", (0..nexp).map(|_| t16_ex(T16K15, T16K2, rng)).collect()),
@@ -215,7 +212,7 @@ fn t16k_bench(rng: &mut Rng) {
     }
 }
 
-/// small: decode-sized T16 calls as the CPU expert worker makes them (pool on CPUs 0-13, 50 ms spin, caller on CPU 16):
+/// small: decode-sized T16 calls using the benchmark's CPU layout, 50 ms spin, caller on WORKER_CPU:
 /// ne = CPUB_NE (default 1,2,3,4,6) experts per call, t = 1, distinct experts per call (weights from RAM). ms per call,
 /// GB/s, and with DSX_T16_PROF=1 the mean phase breakdown in us from pool.run: workers' start (first / last), each
 /// phase's work (mean and slowest worker), the barrier release, and pool.run's return
@@ -227,7 +224,7 @@ fn small_bench(nexp: usize, rng: &mut Rng) {
     let nes: Vec<usize> = std::env::var("CPUB_NE").unwrap_or("1,2,3,4,6".into()).split(',').filter_map(|v| v.trim().parse().ok()).collect();
     let calls: usize = std::env::var("CPUB_CALLS").ok().and_then(|v| v.parse().ok()).unwrap_or(600);
     let th: usize = std::env::var("CPUB_THREADS").ok().and_then(|v| v.parse().ok()).unwrap_or(14);
-    let mut moe = CpuMoe::new(Pool::new(&dsx::cpu::pool::P_CORES[..th], Duration::from_millis(50)));
+    let mut moe = CpuMoe::new(Pool::new(&cpus(th), Duration::from_millis(50)));
     for (name, gu, dn) in [("T16 1.5/2", T16K15, T16K2), ("T16 2/2.5", T16K2, T16K25)] {
         let exs: Vec<Ex> = (0..nexp).map(|_| t16_ex(gu, dn, rng)).collect();
         let ew = views(&exs);
@@ -280,7 +277,7 @@ fn small_bench(nexp: usize, rng: &mut Rng) {
     }
     // the ceiling: a pure read of 1 GB (u64 sums, 64 KB per claim) on the same threads
     drop(moe);
-    let pool = Pool::new(&dsx::cpu::pool::P_CORES[..th], Duration::from_millis(50));
+    let pool = Pool::new(&cpus(th), Duration::from_millis(50));
     let buf: Vec<u64> = (0..(1usize << 27)).map(|i| i as u64).collect();
     let next = std::sync::atomic::AtomicUsize::new(0);
     let sink = std::sync::atomic::AtomicU64::new(0);
@@ -366,8 +363,8 @@ fn main() {
         println!("{line}");
     }
 
-    // the caller spins while workers run: keep it off the pool's CPUs (16 = first E-core)
-    dsx::cpu::pool::pin_to(16);
+    // the caller spins while workers run: keep it off the pool's CPUs
+    dsx::cpu::pool::pin_to(dsx::cpu::pool::WORKER_CPU);
     println!(
         "\nweights streamed from RAM, {nexp} experts per format, calls of 6 experts (all T tokens routed to each)"
     );

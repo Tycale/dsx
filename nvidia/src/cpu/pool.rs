@@ -73,18 +73,19 @@ pub fn pin_to_set(cpus: &[usize]) -> bool {
     unsafe { sched_setaffinity(0, std::mem::size_of_val(&set), set.as_ptr()) == 0 }
 }
 
-// i7-12700K: CPUs 0-15 are the 8 P-cores (two threads each), 16-19 the E-cores. Every spinning thread gets a CPU
-// of its own: two spinners on one CPU time-slice, and the loser sees its flag milliseconds late.
-/// the thread that enqueues GPU work (alone on P-core 7; its sibling 15 stays nearly idle)
+// Ryzen 9 affinity layout. Verify logical CPU numbering before using it on another machine.
+// Every spinning thread gets a CPU of its own: two spinners on one CPU time-slice,
+// and the loser sees its flag milliseconds late. DSX_CPU_LIST assigns expert workers.
+/// the thread that enqueues GPU work
 pub const MAIN_CPU: usize = 14;
 /// the CPU expert worker's coordinator (spins on the route flag)
-pub const WORKER_CPU: usize = 16;
+pub const WORKER_CPU: usize = 15;
 /// the decode Engram prefetch and other helpers: off the pool's, the main thread's and the worker's CPUs
-pub const AUX_CPUS: [usize; 4] = [15, 17, 18, 19];
+pub const AUX_CPUS: [usize; 2] = [30, 31];
 /// every CPU (prefill helpers run while the expert pool sleeps)
-pub const ALL_CPUS: [usize; 20] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+pub const ALL_CPUS: [usize; 32] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31];
 
-/// Logical CPUs 0..15: the 8 P-cores with their hyperthreads on the i7-12700K (and 13700).
+/// Logical CPUs used by the legacy pool; the handoff worker uses DSX_CPU_LIST when set.
 pub const P_CORES: [usize; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 impl Pool {
