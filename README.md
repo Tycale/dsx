@@ -133,6 +133,9 @@ needs prefill. [DESIGN.md](DESIGN.md) describes the execution and memory layout.
 
 ## Documentation
 
+This fork's Ryzen 9 affinity layout and experimental rank-1 adapter support are
+documented in [Fork additions](docs/fork-notes.md).
+
 | Guide | Contents |
 |---|---|
 | [Server configuration](docs/server.md) | Model files, authentication, sampling, thinking and runtime flags |
