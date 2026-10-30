@@ -61,6 +61,12 @@ struct Cli {
     model: Option<PathBuf>,
     #[arg(long)]
     engram: Option<PathBuf>,
+    /// Experimental startup-only rank-1 PEFT wo_b adapter directory (not DSpark).
+    #[arg(long, requires = "model", conflicts_with = "mock")]
+    lora: Option<PathBuf>,
+    /// Additional multiplier; adapter already contains its alpha/r and ablation strength.
+    #[arg(long, default_value_t = 1.0)]
+    lora_scale: f32,
     #[arg(long, default_value_t = 4096)]
     chunk: usize,
     /// GB of routed experts on the main GPU (picked by host-link bandwidth); negative = its free memory minus that
@@ -184,6 +190,8 @@ fn real(cli: &Cli) -> Result<EngineHandle> {
     let args = dsx::server::real::RealEngineArgs {
         model: cli.model.clone().ok_or_else(|| anyhow!("--model is required (or --mock)"))?,
         engram: cli.engram.clone(),
+        lora: cli.lora.clone(),
+        lora_scale: cli.lora_scale,
         ctx: cli.ctx,
         chunk: cli.chunk,
         gpu0_gb: cli.gpu0_gb,

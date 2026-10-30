@@ -923,7 +923,9 @@ impl GpuModel<'_> {
         }
         let nr = n * c.o_groups * c.o_lora;
         self.g.launch(self.k["round_bf16"], ((nr as u32).div_ceil(256), 1, 1), 256, 0, &[Arg::P(pb.r.ptr), Arg::I(nr as i32)])?;
-        self.gemm(pb, &l.o_b, pb.r.ptr, rowp(pb.a.ptr, d, 4), n)
+        self.gemm(pb, &l.o_b, pb.r.ptr, rowp(pb.a.ptr, d, 4), n)?;
+        if let Some(a) = &l.lora { a.apply(&self.g, pb.r.ptr, rowp(pb.a.ptr, d, 4), n)?; }
+        Ok(())
     }
 
     /// q6-plane weights: rows [r0, r0 + rows) dequantized to f16, x packed from stride ldx, y with stride ldy

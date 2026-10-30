@@ -6,6 +6,7 @@
 #include <stdint.h>
 // Volta (SM70) compatibility shims: kept first so every later kernel header (moe/expert_fast/t16/...) can use them
 #include "sm70.cuh"
+#include "lora.cuh"
 
 #define MAXT 8
 

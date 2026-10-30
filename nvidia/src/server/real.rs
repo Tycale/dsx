@@ -40,6 +40,8 @@ use crate::model::Model;
 pub struct RealEngineArgs {
     pub model: PathBuf,
     pub engram: Option<PathBuf>,
+    pub lora: Option<PathBuf>,
+    pub lora_scale: f32,
     pub ctx: usize,
     pub chunk: usize,
     pub gpu0_gb: f64,
@@ -105,9 +107,11 @@ pub fn real_engine(args: &RealEngineArgs) -> Result<Box<dyn Engine>> {
     } else {
         Model::load(&args.model, args.engram.as_deref())?
     }));
+    let adapter = args.lora.as_ref().map(|p| dsx_core::lora::Adapter::load(p, m.cfg.n_layers, m.cfg.dim, m.cfg.o_groups * m.cfg.o_lora, args.lora_scale)).transpose()?;
     let pl = Placement { gpu0_gb: args.gpu0_gb, aux_gb: args.gpu1_gb, arena_gb: args.arena_gb, prefill_chunk: args.chunk, rank: args.rank.clone() };
     let vision = args.vision.as_deref().map(VisionWeights::load).transpose()?;
-    let gm = GpuModel::with_placement(m, -1, args.ctx, pl)?;
+    let mut gm = GpuModel::with_placement(m, -1, args.ctx, pl)?;
+    if let Some(a) = adapter { gm.install_lora(&a, args.chunk)?; }
     let multi = if args.cache_sessions > 1 {
         let fingerprint = CacheContextFingerprint::build(&args.model, args.vision.as_deref(), &m.cfg, m.engram.is_some());
         let budget = (args.session_cache_gb.max(0.0) * 1e9) as usize;

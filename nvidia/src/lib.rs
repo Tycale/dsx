@@ -13,6 +13,8 @@ pub mod experts;
 #[cfg(feature = "cuda")]
 pub mod gpu;
 #[cfg(feature = "cuda")]
+pub mod lora;
+#[cfg(feature = "cuda")]
 pub mod gpumodel;
 #[cfg(feature = "cuda")]
 pub mod handoff;

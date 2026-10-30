@@ -71,6 +71,7 @@ struct DLayer {
     kv_norm: Buf,
     o_a: DMat,
     o_b: DMat,
+    lora: Option<crate::lora::RankOne>,
     sinks: Buf,
     attn_norm: Buf,
     ffn_norm: Buf,
@@ -403,6 +404,7 @@ impl<'m> GpuModel<'m> {
                 kv_norm: f32buf(&g, &l.kv_norm)?,
                 o_a: up(&l.o_a)?,
                 o_b: up(&l.o_b)?,
+                lora: None,
                 sinks: f32buf(&g, &l.sinks)?,
                 attn_norm: f32buf(&g, &l.attn_norm)?,
                 ffn_norm: f32buf(&g, &l.ffn_norm)?,
@@ -1491,7 +1493,7 @@ impl<'m> GpuModel<'m> {
         }
         // o_b with the attention half's hc_post in its epilogue (gemv_q8r1_post)
         let ob = &l.o_b;
-        if self.fuse4 && self.q8r1 && ob.ty == GType::Q8_0 && ob.q8r && !ob.act_fp8 && ob.rows >= 2048 && ob.rows == c.dim {
+        if l.lora.is_none() && self.fuse4 && self.q8r1 && ob.ty == GType::Q8_0 && ob.q8r && !ob.act_fp8 && ob.rows >= 2048 && ob.rows == c.dim {
             let (wp, sp, _) = ob.ptrs(0);
             let (rows, cols) = (ob.rows, ob.cols);
             self.hc_join_main()?;
@@ -1499,7 +1501,9 @@ impl<'m> GpuModel<'m> {
             self.post_attn_done = true;
             return Ok(());
         }
-        self.gemv(&l.o_b, self.r.ptr, self.a.ptr)
+        self.gemv(&l.o_b, self.r.ptr, self.a.ptr)?;
+        if let Some(a) = &l.lora { a.apply(&self.g, self.r.ptr, self.a.ptr, 1)?; }
+        Ok(())
     }
 
     fn indexer(&mut self, li: usize, have_latent: bool) -> Result<()> {
@@ -2510,5 +2514,20 @@ impl GpuModel<'_> {
             s0 = e;
         }
         logits.ok_or_else(|| anyhow::anyhow!("empty prompt"))
+    }
+}
+
+impl GpuModel<'_> {
+    /// Startup-only adapter: never switch adapters over an existing prefix/KV cache.
+    pub fn install_lora(&mut self, adapter: &dsx_core::lora::Adapter, max_batch: usize) -> Result<()> {
+        anyhow::ensure!(self.pos == 0 && self.layers.iter().all(|l| l.lora.is_none()), "LoRA must be installed once before inference");
+        for (&li, a) in &adapter.layers {
+            let layer = self.layers.get_mut(li).ok_or_else(|| anyhow::anyhow!("LoRA layer out of range"))?;
+            anyhow::ensure!(a.a.len() == layer.o_b.cols && a.b.len() == layer.o_b.rows, "LoRA wo_b shape mismatch in layer {li}");
+            anyhow::ensure!(!layer.o_b.act_fp8, "LoRA path currently requires GGUF wo_b with unquantized input activations");
+            layer.lora = Some(crate::lora::RankOne::new(&self.g, a, adapter.scale, max_batch.max(1))?);
+        }
+        eprintln!("EXPERIMENTAL LoRA: {} attention wo_b layers, scale {}, FP32 runtime delta; base weights unchanged", adapter.layers.len(), adapter.scale);
+        Ok(())
     }
 }

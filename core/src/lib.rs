@@ -6,6 +6,7 @@ pub mod dspark;
 pub mod formats;
 pub mod gguf;
 pub mod iqgrid;
+pub mod lora;
 pub mod model;
 pub mod numerics;
 mod page_cache;
