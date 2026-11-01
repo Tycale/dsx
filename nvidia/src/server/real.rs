@@ -844,6 +844,7 @@ fn multi_request(
     }
 
     // ---- decode: raw logits stay separate from the penalized sampling copy ----
+    let prefill = t0.elapsed();
     let td = Instant::now();
     let mut sampler = Sampler::from_params(p);
     let mut fin = Finish::Length;
@@ -986,6 +987,6 @@ fn multi_request(
         cache_context = cache.fingerprint.describe(),
         "session cache request"
     );
-    let stats = GenStats { prefill: Some(t0.elapsed()), decode: Some(td.elapsed()), cached_prompt_tokens: usable_start };
+    let stats = GenStats { prefill: Some(prefill), decode: Some(td.elapsed()), cached_prompt_tokens: usable_start };
     Ok((fin, stats))
 }
